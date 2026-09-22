@@ -18,44 +18,48 @@
 <meta name="twitter:image" content="https://chap.github.io/1-min-workout/og.png">
 <link rel="icon" type="image/png" href="apple-touch-icon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="theme-color" content="#111111">
+<meta name="theme-color" content="#000000">
 <style>
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  html, body { margin: 0; height: 100%; background: #111; color: #eee;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  :root { --black: #000; --white: #fff; --yellow: #ffd60a; }
+  html, body { margin: 0; height: 100%; background: var(--black); color: var(--white);
+    font-family: "Courier New", Courier, monospace; }
   button { font: inherit; cursor: pointer; border: 0; border-radius: 10px;
     padding: 14px 24px; font-size: 18px; font-weight: 600; }
-  .primary { background: #2f80ed; color: #fff; }
-  .primary:hover { background: #1c6dd8; }
+  .primary { background: var(--yellow); color: var(--black); }
+  .primary:hover { background: var(--white); }
 
   #home { height: 100%; display: flex; flex-direction: column; align-items: center;
     justify-content: center; gap: 16px; padding: 16px; text-align: center; }
   #home h1 { margin: 0; font-size: 36px; }
-  #home p { margin: 0; color: #aaa; }
+  #home h1 { color: var(--yellow); }
+  #home p { margin: 0; color: var(--white); }
 
   #room { height: 100%; display: flex; flex-direction: column; }
 
   #grid { flex: 1; display: grid; gap: 6px; padding: 6px; min-height: 0; }
-  .tile { position: relative; background: #000; border-radius: 10px; overflow: hidden; min-height: 0; }
+  .tile { position: relative; background: #111; border-radius: 10px; overflow: hidden; min-height: 0; }
   .tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
   .tile.self video { transform: scaleX(-1); }
   .tile .ready-btn { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
-    background: #444; color: #fff; }
-  .tile .ready-btn.on, .tile .ready-badge.on { background: #27ae60; }
+    background: var(--black); color: var(--white); border: 2px solid var(--white); white-space: nowrap; }
   .tile .ready-badge { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
-    background: #444; padding: 10px 18px; border-radius: 10px; font-weight: 600; }
+    background: var(--black); color: var(--white); border: 2px solid var(--white);
+    padding: 10px 18px; border-radius: 10px; font-weight: 700; white-space: nowrap; }
+  .tile .ready-btn.small, .tile .ready-badge.small { padding: 6px 12px; font-size: 14px; border-width: 1px; }
+  .tile .ready-btn.on, .tile .ready-badge.on { background: var(--yellow); color: var(--black); border-color: var(--yellow); }
 
   #copy { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 14px); left: 50%; transform: translateX(-50%);
     z-index: 10; display: flex; align-items: center; gap: 10px; padding: 12px 22px; font-size: 18px;
-    background: rgba(0,0,0,.6); color: #fff; border-radius: 999px; backdrop-filter: blur(8px);
+    background: var(--black); color: var(--yellow); border: 2px solid var(--yellow); border-radius: 999px;
     box-shadow: 0 4px 16px rgba(0,0,0,.4); white-space: nowrap; transition: background .2s; }
-  #copy:hover { background: rgba(0,0,0,.8); }
-  #copy.copied { background: #27ae60; }
+  #copy:hover { background: var(--yellow); color: var(--black); }
+  #copy.copied { background: var(--yellow); color: var(--black); }
   #copy svg { width: 22px; height: 22px; flex: none; }
 
   #copied-banner { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 20;
-    background: #27ae60; color: #fff; padding: 22px 30px; border-radius: 16px; text-align: center;
+    background: var(--yellow); color: var(--black); padding: 22px 30px; border-radius: 16px; text-align: center;
     box-shadow: 0 10px 40px rgba(0,0,0,.5); max-width: calc(100vw - 32px);
     animation: pop .25s ease-out; transition: opacity .4s; }
   #copied-banner strong { display: block; font-size: 26px; margin-bottom: 6px; }
@@ -64,8 +68,8 @@
   @keyframes pop { from { transform: translate(-50%, -50%) scale(.8); opacity: 0; } }
 
   #countdown { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-    pointer-events: none; font-size: min(40vw, 40vh); font-weight: 800; color: rgba(255,255,255,.9);
-    text-shadow: 0 0 30px rgba(0,0,0,.8); font-variant-numeric: tabular-nums; }
+    pointer-events: none; font-size: min(40vw, 40vh); font-weight: 700; color: var(--yellow);
+    text-shadow: 0 0 30px #000, 0 0 8px #000; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -164,6 +168,9 @@ async function startRoom(roomId, justCreated = false) {
 
   const room = joinRoom({ appId: 'chap-1-min-workout' }, roomId)
   const readyAction = room.makeAction('ready')
+  const resetAction = room.makeAction('reset')
+  const resetVotes = new Set()   // peerIds (incl. self) who want to reset the countdown
+  let countdownPeers = new Set() // participants when the countdown started
 
   if (localStream) room.addStream(localStream)
 
@@ -178,6 +185,8 @@ async function startRoom(roomId, justCreated = false) {
     tiles.get(peerId)?.el.remove()
     tiles.delete(peerId)
     ready.delete(peerId)
+    resetVotes.delete(peerId)
+    countdownPeers.delete(peerId)
     update()
   }
 
@@ -200,6 +209,12 @@ async function startRoom(roomId, justCreated = false) {
     update()
   }
 
+  resetAction.onMessage = (value, { peerId }) => {
+    if (!counting) return
+    value ? resetVotes.add(peerId) : resetVotes.delete(peerId)
+    update()
+  }
+
   function makeTile(peerId, isSelf) {
     const el = document.createElement('div')
     el.className = 'tile' + (isSelf ? ' self' : '')
@@ -213,7 +228,13 @@ async function startRoom(roomId, justCreated = false) {
       badge = document.createElement('button')
       badge.className = 'ready-btn'
       badge.onclick = () => {
-        if (counting) return
+        if (counting) {
+          const vote = !resetVotes.has(selfId)
+          vote ? resetVotes.add(selfId) : resetVotes.delete(selfId)
+          resetAction.send(vote)
+          update()
+          return
+        }
         unlockSpeech()
         ready.set(selfId, !ready.get(selfId))
         readyAction.send(ready.get(selfId))
@@ -245,12 +266,27 @@ async function startRoom(roomId, justCreated = false) {
   function update() {
     layout()
     for (const [id, t] of tiles) {
-      const r = ready.get(id)
-      t.badge.classList.toggle('on', !!r)
-      t.badge.textContent = id === selfId
-        ? (r ? 'Ready ✓ (tap to undo)' : "I'm ready")
-        : (r ? 'Ready ✓' : 'Not ready')
-      t.badge.hidden = counting
+      const isSelf = id === selfId
+      t.badge.classList.toggle('small', counting)
+      if (counting) {
+        const voted = resetVotes.has(id)
+        t.badge.classList.toggle('on', voted)
+        t.badge.textContent = isSelf ? (voted ? 'Reset ✓' : 'Reset') : 'Reset ✓'
+        t.badge.hidden = !isSelf && !voted
+      } else {
+        const r = ready.get(id)
+        t.badge.classList.toggle('on', !!r)
+        t.badge.textContent = isSelf
+          ? (r ? 'Ready ✓ (tap to undo)' : "I'm ready")
+          : (r ? 'Ready ✓' : 'Not ready')
+        t.badge.hidden = false
+      }
+    }
+    if (counting && countdownPeers.size && [...countdownPeers].every(id => resetVotes.has(id))) {
+      clearInterval(timer)
+      window.speechSynthesis?.cancel()
+      finish()
+      return
     }
     const total = ready.size
     const numReady = [...ready.values()].filter(Boolean).length
@@ -260,6 +296,8 @@ async function startRoom(roomId, justCreated = false) {
 
   function startCountdown() {
     counting = true
+    resetVotes.clear()
+    countdownPeers = new Set(ready.keys())
     const cd = $('countdown')
     cd.hidden = false
     const start = performance.now()
@@ -284,6 +322,8 @@ async function startRoom(roomId, justCreated = false) {
 
   function finish() {
     counting = false
+    resetVotes.clear()
+    countdownPeers.clear()
     $('countdown').hidden = true
     for (const id of ready.keys()) ready.set(id, false)
     update()
@@ -295,10 +335,11 @@ async function startRoom(roomId, justCreated = false) {
 // ---------- Confetti ----------
 function celebrate() {
   const end = Date.now() + 3000
-  confetti({ particleCount: 200, spread: 100, origin: { y: 0.6 } })
+  const colors = ['#ffd60a', '#ffffff', '#000000']
+  confetti({ particleCount: 200, spread: 100, origin: { y: 0.6 }, colors })
   ;(function frame() {
-    confetti({ particleCount: 6, angle: 60, spread: 60, origin: { x: 0 } })
-    confetti({ particleCount: 6, angle: 120, spread: 60, origin: { x: 1 } })
+    confetti({ particleCount: 6, angle: 60, spread: 60, origin: { x: 0 }, colors })
+    confetti({ particleCount: 6, angle: 120, spread: 60, origin: { x: 1 }, colors })
     if (Date.now() < end) requestAnimationFrame(frame)
   })()
 }
