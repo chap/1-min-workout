@@ -45,11 +45,22 @@
   .tile .ready-badge { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
     background: #444; padding: 10px 18px; border-radius: 10px; font-weight: 600; }
 
-  #copy { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); right: 12px; z-index: 10;
-    width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center;
-    background: rgba(0,0,0,.55); color: #fff; border-radius: 50%; backdrop-filter: blur(6px); }
-  #copy:hover { background: rgba(0,0,0,.75); }
-  #copy svg { width: 20px; height: 20px; }
+  #copy { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 14px); left: 50%; transform: translateX(-50%);
+    z-index: 10; display: flex; align-items: center; gap: 10px; padding: 12px 22px; font-size: 18px;
+    background: rgba(0,0,0,.6); color: #fff; border-radius: 999px; backdrop-filter: blur(8px);
+    box-shadow: 0 4px 16px rgba(0,0,0,.4); white-space: nowrap; transition: background .2s; }
+  #copy:hover { background: rgba(0,0,0,.8); }
+  #copy.copied { background: #27ae60; }
+  #copy svg { width: 22px; height: 22px; flex: none; }
+
+  #copied-banner { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 20;
+    background: #27ae60; color: #fff; padding: 22px 30px; border-radius: 16px; text-align: center;
+    box-shadow: 0 10px 40px rgba(0,0,0,.5); max-width: calc(100vw - 32px);
+    animation: pop .25s ease-out; transition: opacity .4s; }
+  #copied-banner strong { display: block; font-size: 26px; margin-bottom: 6px; }
+  #copied-banner span { font-size: 16px; opacity: .9; }
+  #copied-banner.fade { opacity: 0; }
+  @keyframes pop { from { transform: translate(-50%, -50%) scale(.8); opacity: 0; } }
 
   #countdown { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
     pointer-events: none; font-size: min(40vw, 40vh); font-weight: 800; color: rgba(255,255,255,.9);
@@ -66,7 +77,8 @@
 
 <div id="room" hidden>
   <div id="grid"></div>
-  <button id="copy" title="Copy link" aria-label="Copy link"></button>
+  <button id="copy"></button>
+  <div id="copied-banner" hidden><strong>✓ Link copied!</strong><span>Paste it in a message to invite friends</span></div>
 </div>
 
 <div id="countdown" hidden></div>
@@ -88,8 +100,12 @@ if (!roomId) {
     const url = new URL(location.href)
     url.search = '?room=' + id
     await copyText(url.href)
-    location.href = url.href
+    history.pushState(null, '', url.href)
+    $('home').hidden = true
+    scrollTo(0, 0)
+    startRoom(id, true)
   }
+  addEventListener('popstate', () => location.reload())
 } else {
   startRoom(roomId)
 }
@@ -104,16 +120,27 @@ async function copyText(text) {
 }
 
 // ---------- Room ----------
-async function startRoom(roomId) {
+async function startRoom(roomId, justCreated = false) {
   $('room').hidden = false
+  if (justCreated) {
+    const banner = $('copied-banner')
+    banner.hidden = false
+    setTimeout(() => banner.classList.add('fade'), 3500)
+    setTimeout(() => (banner.hidden = true), 4000)
+  }
   const copyIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
-  const checkIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="#6fcf97" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
-  $('copy').innerHTML = copyIcon
+  const checkIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
+  const setCopy = (copied) => {
+    $('copy').innerHTML = copied ? checkIcon + 'Copied!' : copyIcon + 'Copy link'
+    $('copy').classList.toggle('copied', copied)
+  }
+  setCopy(justCreated)
+  if (justCreated) copyText.t = setTimeout(() => setCopy(false), 4000)
   $('copy').onclick = async () => {
     await copyText(location.href)
-    $('copy').innerHTML = checkIcon
+    setCopy(true)
     clearTimeout(copyText.t)
-    copyText.t = setTimeout(() => ($('copy').innerHTML = copyIcon), 1500)
+    copyText.t = setTimeout(() => setCopy(false), 2000)
   }
 
   const grid = $('grid')
