@@ -19,19 +19,11 @@
   #home p { margin: 0; color: #aaa; }
 
   #room { height: 100%; display: flex; flex-direction: column; }
-  #bar { display: flex; align-items: center; gap: 12px; padding: 10px 14px;
-    background: #1b1b1b; flex-wrap: wrap; }
-  #bar .spacer { flex: 1; }
-  #bar button { padding: 8px 14px; font-size: 14px; background: #333; color: #eee; }
-  #status { color: #aaa; font-size: 14px; }
-  #toast { color: #6fcf97; font-size: 14px; }
 
   #grid { flex: 1; display: grid; gap: 6px; padding: 6px; min-height: 0; }
   .tile { position: relative; background: #000; border-radius: 10px; overflow: hidden; min-height: 0; }
   .tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
   .tile.self video { transform: scaleX(-1); }
-  .tile .label { position: absolute; left: 10px; top: 10px; background: rgba(0,0,0,.6);
-    padding: 4px 10px; border-radius: 6px; font-size: 14px; }
   .tile .ready-btn { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
     background: #444; color: #fff; }
   .tile .ready-btn.on, .tile .ready-badge.on { background: #27ae60; }
@@ -52,13 +44,6 @@
 </div>
 
 <div id="room" hidden>
-  <div id="bar">
-    <strong>1 Min Workout</strong>
-    <span id="status">Connecting…</span>
-    <span class="spacer"></span>
-    <span id="toast"></span>
-    <button id="copy">Copy link</button>
-  </div>
   <div id="grid"></div>
 </div>
 
@@ -66,6 +51,7 @@
 
 <script type="module">
 import { joinRoom, selfId } from 'https://esm.run/trystero@0.25.4'
+import confetti from 'https://esm.run/canvas-confetti@1.9.3'
 
 const $ = id => document.getElementById(id)
 const params = new URLSearchParams(location.search)
@@ -95,16 +81,9 @@ async function copyText(text) {
   }
 }
 
-function toast(msg) {
-  $('toast').textContent = msg
-  clearTimeout(toast.t)
-  toast.t = setTimeout(() => ($('toast').textContent = ''), 2500)
-}
-
 // ---------- Room ----------
 async function startRoom(roomId) {
   $('room').hidden = false
-  $('copy').onclick = async () => { await copyText(location.href); toast('Link copied!') }
 
   const grid = $('grid')
   const tiles = new Map()   // peerId -> {el, video, badge}
@@ -116,11 +95,11 @@ async function startRoom(roomId) {
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
   } catch (e) {
-    $('status').textContent = 'Camera/mic unavailable: ' + e.message
+    console.warn('Camera/mic unavailable', e)
   }
 
   // Self tile
-  const self = makeTile(selfId, 'You', true)
+  const self = makeTile(selfId, true)
   if (localStream) { self.video.srcObject = localStream; self.video.muted = true }
   ready.set(selfId, false)
 
@@ -150,7 +129,7 @@ async function startRoom(roomId) {
 
   function ensurePeer(peerId) {
     if (!tiles.has(peerId)) {
-      makeTile(peerId, 'Guest ' + peerId.slice(0, 4), false)
+      makeTile(peerId, false)
       ready.set(peerId, false)
     }
     return tiles.get(peerId)
@@ -162,16 +141,13 @@ async function startRoom(roomId) {
     update()
   }
 
-  function makeTile(peerId, label, isSelf) {
+  function makeTile(peerId, isSelf) {
     const el = document.createElement('div')
     el.className = 'tile' + (isSelf ? ' self' : '')
     const video = document.createElement('video')
     video.autoplay = true
     video.playsInline = true
-    const lab = document.createElement('div')
-    lab.className = 'label'
-    lab.textContent = label
-    el.append(video, lab)
+    el.append(video)
 
     let badge
     if (isSelf) {
@@ -219,9 +195,6 @@ async function startRoom(roomId) {
     }
     const total = ready.size
     const numReady = [...ready.values()].filter(Boolean).length
-    $('status').textContent = total === 1
-      ? 'Waiting for others to join — share the link'
-      : `${total} participants · ${numReady} ready`
 
     if (!counting && total > 0 && numReady === total) startCountdown()
   }
@@ -237,10 +210,11 @@ async function startRoom(roomId) {
       if (remaining !== last) {
         last = remaining
         cd.textContent = remaining
-        if (remaining % 5 === 0) speak(String(remaining))
+        if (remaining % 5 === 0 || remaining <= 10) speak(String(remaining))
       }
       if (remaining === 0) {
         clearInterval(timer)
+        celebrate()
         setTimeout(finish, 1500)
       }
     }
@@ -257,6 +231,17 @@ async function startRoom(roomId) {
   }
 
   update()
+}
+
+// ---------- Confetti ----------
+function celebrate() {
+  const end = Date.now() + 3000
+  confetti({ particleCount: 200, spread: 100, origin: { y: 0.6 } })
+  ;(function frame() {
+    confetti({ particleCount: 6, angle: 60, spread: 60, origin: { x: 0 } })
+    confetti({ particleCount: 6, angle: 120, spread: 60, origin: { x: 1 } })
+    if (Date.now() < end) requestAnimationFrame(frame)
+  })()
 }
 
 // ---------- Speech ----------
