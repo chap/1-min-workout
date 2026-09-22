@@ -44,10 +44,11 @@
   .tile.self video { transform: scaleX(-1); }
   .tile .ready-btn { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
     background: var(--black); color: var(--white); border: 2px solid var(--white); white-space: nowrap; }
-  .tile .ready-badge { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
-    background: var(--black); color: var(--white); border: 2px solid var(--white);
-    padding: 10px 18px; border-radius: 10px; font-weight: 700; white-space: nowrap; }
-  .tile .ready-btn.small, .tile .ready-badge.small { padding: 6px 12px; font-size: 14px; border-width: 1px; }
+  .tile .ready-badge { position: absolute; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,.7); color: var(--white); text-align: center;
+    padding: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+  .tile .ready-btn.small { padding: 6px 12px; font-size: 14px; border-width: 1px; }
+  .tile .ready-badge.small { padding: 6px; font-size: 14px; }
   .tile .ready-btn.on, .tile .ready-badge.on { background: var(--yellow); color: var(--black); border-color: var(--yellow); }
 
   #copy { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 14px); left: 50%; transform: translateX(-50%);
