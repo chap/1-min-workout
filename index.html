@@ -168,31 +168,89 @@ async function startRoom(roomId, justCreated = false) {
   ready.set(selfId, false)
 
   const room = joinRoom({ appId: 'chap-1-min-workout' }, roomId)
-  const readyAction = room.makeAction('ready')
-  const resetAction = room.makeAction('reset')
   const resetVotes = new Set()   // peerIds (incl. self) who want to reset the countdown
   let countdownPeers = new Set() // participants when the countdown started
+
+  // Not every pair of browsers can connect directly (NAT/firewalls), so state is
+  // gossiped through the mesh and video is relayed by a peer that can reach both.
+  const directPeers = new Set()   // peers with a direct WebRTC connection
+  const streams = new Map()       // origin -> {stream, via}
+  const lastSeen = new Map()      // origin -> ms of last message
+  const knownDirect = new Map()   // origin -> Set of peers it has direct video from
+  const relayAsked = new Map()    // origin -> {via, at}
+  const seen = new Set()
+  let seq = 0
+
+  const msgAction = room.makeAction('msg')
+  const relayAction = room.makeAction('relay')
+
+  function flood(env, except) {
+    const targets = [...directPeers].filter(id => id !== except && id !== env.origin)
+    if (targets.length) msgAction.send(env, { target: targets })
+  }
+  function broadcast(type, data) {
+    const env = { origin: selfId, seq: ++seq, type, data }
+    seen.add(selfId + ':' + env.seq)
+    flood(env)
+  }
+  const sendHello = () => broadcast('hello', [...streams].filter(([id, s]) => s.via === id).map(([id]) => id))
+  const sendState = () => {
+    broadcast('ready', ready.get(selfId))
+    if (counting) broadcast('reset', resetVotes.has(selfId))
+  }
+
+  msgAction.onMessage = (env, { peerId }) => {
+    const key = env.origin + ':' + env.seq
+    if (env.origin === selfId || seen.has(key)) return
+    seen.add(key)
+    if (seen.size > 5000) seen.clear()
+    flood(env, peerId)
+
+    if (env.type === 'bye') return removePeer(env.origin)
+    lastSeen.set(env.origin, Date.now())
+    ensurePeer(env.origin)
+    if (env.type === 'hello') knownDirect.set(env.origin, new Set(env.data))
+    if (env.type === 'ready') ready.set(env.origin, !!env.data)
+    if (env.type === 'reset' && counting) env.data ? resetVotes.add(env.origin) : resetVotes.delete(env.origin)
+    update()
+  }
+
+  relayAction.onMessage = ({ origin }, { peerId }) => {
+    const s = streams.get(origin)
+    if (s && s.via === origin) room.addStream(s.stream, { target: peerId, metadata: { origin } })
+  }
 
   if (localStream) room.addStream(localStream)
 
   room.onPeerJoin = peerId => {
+    directPeers.add(peerId)
+    lastSeen.set(peerId, Date.now())
     if (localStream) room.addStream(localStream, { target: peerId })
     ensurePeer(peerId)
-    readyAction.send(ready.get(selfId), { target: peerId })
+    sendHello()
+    sendState()
     update()
   }
 
   room.onPeerLeave = peerId => {
-    tiles.get(peerId)?.el.remove()
-    tiles.delete(peerId)
-    ready.delete(peerId)
-    resetVotes.delete(peerId)
-    countdownPeers.delete(peerId)
-    update()
+    directPeers.delete(peerId)
+    for (const [origin, s] of streams) {
+      if (s.via === peerId) { streams.delete(origin); relayAsked.delete(origin) }
+    }
+    // Keep the tile if they're still reachable through someone else; the
+    // housekeeping loop removes them once their heartbeats stop.
+    if (Date.now() - (lastSeen.get(peerId) || 0) > 5000) removePeer(peerId)
+    sendHello()
   }
 
-  room.onPeerStream = (stream, peerId) => {
-    ensurePeer(peerId).video.srcObject = stream
+  room.onPeerStream = (stream, peerId, metadata) => {
+    const origin = metadata?.origin || peerId
+    if (origin === selfId) return
+    const existing = streams.get(origin)
+    if (origin !== peerId && existing?.via === origin) return // prefer direct video
+    streams.set(origin, { stream, via: peerId })
+    ensurePeer(origin).video.srcObject = stream
+    if (origin === peerId) sendHello()
     update()
   }
 
@@ -200,21 +258,45 @@ async function startRoom(roomId, justCreated = false) {
     if (!tiles.has(peerId)) {
       makeTile(peerId, false)
       ready.set(peerId, false)
+      lastSeen.set(peerId, lastSeen.get(peerId) || Date.now())
+      sendState()
     }
     return tiles.get(peerId)
   }
 
-  readyAction.onMessage = (value, { peerId }) => {
-    ensurePeer(peerId)
-    ready.set(peerId, !!value)
+  function removePeer(peerId) {
+    if (!tiles.has(peerId)) return
+    tiles.get(peerId).el.remove()
+    tiles.delete(peerId)
+    ready.delete(peerId)
+    resetVotes.delete(peerId)
+    countdownPeers.delete(peerId)
+    streams.delete(peerId)
+    lastSeen.delete(peerId)
+    knownDirect.delete(peerId)
+    relayAsked.delete(peerId)
     update()
   }
 
-  resetAction.onMessage = (value, { peerId }) => {
-    if (!counting) return
-    value ? resetVotes.add(peerId) : resetVotes.delete(peerId)
-    update()
-  }
+  // Heartbeat, stale-peer cleanup, and asking for relayed video when needed.
+  setInterval(() => {
+    const now = Date.now()
+    sendHello()
+    for (const id of [...tiles.keys()]) {
+      if (id === selfId) continue
+      if (!directPeers.has(id) && now - (lastSeen.get(id) || 0) > 8000) { removePeer(id); continue }
+      if (streams.has(id)) continue
+      const asked = relayAsked.get(id)
+      if (asked && now - asked.at < 5000) continue
+      const via = [...directPeers].find(p => knownDirect.get(p)?.has(id))
+      if (via) {
+        relayAsked.set(id, { via, at: now })
+        relayAction.send({ origin: id }, { target: via })
+      }
+    }
+  }, 2000)
+
+  addEventListener('pagehide', () => broadcast('bye'))
 
   function makeTile(peerId, isSelf) {
     const el = document.createElement('div')
@@ -232,13 +314,13 @@ async function startRoom(roomId, justCreated = false) {
         if (counting) {
           const vote = !resetVotes.has(selfId)
           vote ? resetVotes.add(selfId) : resetVotes.delete(selfId)
-          resetAction.send(vote)
+          broadcast('reset', vote)
           update()
           return
         }
         unlockSpeech()
         ready.set(selfId, !ready.get(selfId))
-        readyAction.send(ready.get(selfId))
+        broadcast('ready', ready.get(selfId))
         update()
       }
     } else {
